@@ -42,6 +42,10 @@ func ProcessAttestationsNoVerifySignature(
 	for idx, att := range body.Attestations() {
 		beaconState, err = ProcessAttestationNoVerifySignature(ctx, beaconState, att, totalBalance)
 
+		// Possible improvement: 
+		// Do the epoch end check in a goroutine and log results there
+		// Can be done in a worker goroutine in buffer.go
+
 		// Check if it's epoch end
 		endPruneSlot, getSlotErr := slots.EpochEnd(att.GetData().Target.Epoch)
 		if getSlotErr != nil {
