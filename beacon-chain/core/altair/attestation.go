@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
@@ -17,7 +18,11 @@ import (
 	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation"
+	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	buffer "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair/counter"
 )
+
+var attestationsBuffer = *buffer.New()
 
 // ProcessAttestationsNoVerifySignature applies processing operations to a block's inner attestation
 // records. The only difference would be that the attestation signature would not be verified.
@@ -36,9 +41,29 @@ func ProcessAttestationsNoVerifySignature(
 	}
 	for idx, att := range body.Attestations() {
 		beaconState, err = ProcessAttestationNoVerifySignature(ctx, beaconState, att, totalBalance)
+
+		// Possible improvement: 
+		// Do the epoch end check in a goroutine and log results there
+		// Can be done in a worker goroutine in buffer.go
+
+		// Check if it's epoch end
+		endPruneSlot, getSlotErr := slots.EpochEnd(att.GetData().Target.Epoch)
+		if getSlotErr != nil {
+			log.Println(getSlotErr)
+		}
+		// If yes log aggregated data
+		if slots.IsEpochEnd(endPruneSlot) {
+			log.Println(attestationsBuffer.GetAggregation())
+		}
 		if err != nil {
+			// Increment errors counter and buffer error
+			attestationsBuffer.IncrementError()
+			attestationsBuffer.AddError(err)
+			
 			return nil, errors.Wrapf(err, "could not verify attestation at index %d in block", idx)
 		}
+		// Inc successful attestation
+		attestationsBuffer.IncrementSuccess()
 	}
 	return beaconState, nil
 }
